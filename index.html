@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>動画検索</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif;
+      background: #f5f5f5;
+      color: #222;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #cc0000;
+      color: white;
+      padding: 14px 16px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .container {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 20px 16px 60px;
+    }
+
+    .search-card {
+      background: white;
+      border-radius: 10px;
+      padding: 18px 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+      margin-bottom: 18px;
+    }
+
+    .search-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    #search-input {
+      flex: 1;
+      padding: 10px 14px;
+      font-size: 1rem;
+      border: 1.5px solid #ddd;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #search-input:focus { border-color: #cc0000; }
+
+    #btn-search {
+      padding: 10px 20px;
+      background: #cc0000;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    #btn-search:hover { background: #aa0000; }
+    #btn-search:disabled { background: #ccc; cursor: default; }
+
+    .mode-tabs {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .mode-tab {
+      padding: 5px 16px;
+      border-radius: 20px;
+      border: 1.5px solid #ddd;
+      cursor: pointer;
+      font-size: 0.88rem;
+      background: white;
+      color: #555;
+      transition: all 0.15s;
+    }
+    .mode-tab.active {
+      background: #cc0000;
+      color: white;
+      border-color: #cc0000;
+    }
+
+    #status {
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 12px;
+      min-height: 1.2em;
+    }
+
+    #loading {
+      text-align: center;
+      color: #999;
+      padding: 32px 0;
+      display: none;
+    }
+    #loading.visible { display: block; }
+
+    #no-results {
+      text-align: center;
+      color: #999;
+      padding: 32px 0;
+      display: none;
+    }
+    #no-results.visible { display: block; }
+
+    .result-item {
+      background: white;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      transition: box-shadow 0.15s;
+    }
+    .result-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.13); }
+
+    .result-title a {
+      color: #1a0dab;
+      text-decoration: none;
+      font-size: 0.97rem;
+      font-weight: 500;
+      line-height: 1.4;
+    }
+    .result-title a:hover { text-decoration: underline; }
+
+    .result-meta {
+      font-size: 0.78rem;
+      color: #999;
+      margin-top: 5px;
+    }
+
+    .result-people {
+      font-size: 0.82rem;
+      color: #555;
+      margin-top: 6px;
+      line-height: 1.5;
+      border-left: 2px solid #e0e0e0;
+      padding-left: 8px;
+    }
+
+    #btn-more {
+      display: none;
+      width: 100%;
+      padding: 11px;
+      background: white;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      cursor: pointer;
+      margin-top: 6px;
+      color: #444;
+      transition: background 0.15s;
+    }
+    #btn-more.visible { display: block; }
+    #btn-more:hover { background: #f0f0f0; }
+  </style>
+</head>
+<body>
+
+<header id="site-title">動画検索</header>
+
+<div class="container">
+  <div class="search-card">
+    <div class="search-row">
+      <input type="search" id="search-input" placeholder="キーワードを入力..." autocomplete="off">
+      <button id="btn-search" onclick="doSearch(true)">検索</button>
+    </div>
+    <div class="mode-tabs">
+      <button class="mode-tab active" data-mode="keyword">キーワード</button>
+      <button class="mode-tab" data-mode="people">出演者名</button>
+    </div>
+  </div>
+
+  <div id="status"></div>
+  <div id="loading">検索中...</div>
+  <div id="no-results">該当する動画が見つかりませんでした。</div>
+  <div id="results"></div>
+  <button id="btn-more" onclick="doSearch(false)">さらに読み込む</button>
+</div>
+
+<script>
+  var currentMode   = 'keyword';
+  var currentQuery  = '';
+  var currentOffset = 0;
+  var LIMIT         = 20;
+
+  // チャンネルタイトルを取得してヘッダーに反映
+  google.script.run
+    .withSuccessHandler(function(title) {
+      if (title) document.getElementById('site-title').textContent = title + ' 動画検索';
+    })
+    .getChannelTitle();
+
+  // モード切替
+  document.querySelectorAll('.mode-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.mode-tab').forEach(function(t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      currentMode = tab.dataset.mode;
+      document.getElementById('search-input').placeholder =
+        currentMode === 'people' ? '出演者名を入力... (例: 青木理)' : 'キーワードを入力...';
+    });
+  });
+
+  // Enter キーで検索
+  document.getElementById('search-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doSearch(true);
+  });
+
+  function doSearch(isNew) {
+    var q = document.getElementById('search-input').value.trim();
+    if (!q) return;
+
+    if (isNew) {
+      currentQuery  = q;
+      currentOffset = 0;
+      document.getElementById('results').innerHTML = '';
+      setVisible('btn-more', false);
+      setVisible('no-results', false);
+    }
+
+    var params = { limit: LIMIT, offset: currentOffset };
+    if (currentMode === 'people') {
+      params.people = currentQuery;
+    } else {
+      params.q = currentQuery;
+    }
+
+    setLoading(true);
+    document.getElementById('btn-search').disabled = true;
+
+    google.script.run
+      .withSuccessHandler(onResult)
+      .withFailureHandler(onError)
+      .searchVideos(params);
+  }
+
+  function onResult(data) {
+    setLoading(false);
+    document.getElementById('btn-search').disabled = false;
+
+    if (!data.ok) {
+      setStatus('エラー: ' + data.error);
+      return;
+    }
+
+    var isFirst = currentOffset === 0;
+
+    if (isFirst && data.totalMatches === 0) {
+      setVisible('no-results', true);
+      setStatus('');
+      return;
+    }
+
+    if (isFirst) {
+      setStatus(data.totalMatches + ' 件ヒット');
+    }
+
+    var container = document.getElementById('results');
+    data.items.forEach(function(item) {
+      var date   = item.publishedAt ? item.publishedAt.slice(0, 10) : '';
+      var people = item.people
+        ? '<div class="result-people">' + escHtml(item.people) + '</div>'
+        : '';
+
+      var div = document.createElement('div');
+      div.className = 'result-item';
+      div.innerHTML =
+        '<div class="result-title"><a href="' + escHtml(item.url) + '" target="_blank" rel="noopener">' + escHtml(item.title) + '</a></div>' +
+        '<div class="result-meta">' + escHtml(date) + '</div>' +
+        people;
+      container.appendChild(div);
+    });
+
+    currentOffset = data.nextOffset;
+
+    var hasMore = data.nextOffset < data.totalMatches;
+    setVisible('btn-more', hasMore);
+
+    if (!isFirst && !hasMore) {
+      setStatus('全 ' + data.totalMatches + ' 件を表示しました');
+    }
+  }
+
+  function onError(err) {
+    setLoading(false);
+    document.getElementById('btn-search').disabled = false;
+    setStatus('エラー: ' + String(err));
+  }
+
+  function setLoading(v) {
+    document.getElementById('loading').classList.toggle('visible', v);
+  }
+
+  function setVisible(id, v) {
+    document.getElementById(id).classList.toggle('visible', v);
+  }
+
+  function setStatus(msg) {
+    document.getElementById('status').textContent = msg;
+  }
+
+  function escHtml(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>
