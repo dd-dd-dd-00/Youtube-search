@@ -3,9 +3,19 @@
  * /exec?token=...&people=...&limit=10
  *
  * Script Properties:
- * - API_TOKEN
- * - SEARCH_SHEET (default: videos)
+ * - SPREADSHEET_ID : 動画データのスプレッドシートID（必須）
+ * - SEARCH_SHEET   : シート名（省略時: videos）
+ * - CHANNEL_TITLE  : ヘッダーに表示するチャンネル名
  */
+
+/** スプレッドシートを取得（SPREADSHEET_ID優先、なければgetActive） */
+function getSpreadsheet_() {
+  const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (id) return SpreadsheetApp.openById(id);
+  const ss = SpreadsheetApp.getActive();
+  if (!ss) throw new Error('SPREADSHEET_ID が未設定。Script Properties に SPREADSHEET_ID を入れて。');
+  return ss;
+}
 
 function doGet(e) {
   try {
@@ -65,7 +75,7 @@ function searchByText_(p) {
   if (!Number.isFinite(offset) || offset < 0) offset = 0;
 
   const sheetName = PropertiesService.getScriptProperties().getProperty('SEARCH_SHEET') || 'videos';
-  const sh = SpreadsheetApp.getActive().getSheetByName(sheetName);
+  const sh = getSpreadsheet_().getSheetByName(sheetName);
   if (!sh) throw new Error(`シートが見つからない: ${sheetName}`);
 
   const lastRow = sh.getLastRow();
@@ -142,7 +152,7 @@ function searchByPeople_(p) {
   if (!Number.isFinite(offset) || offset < 0) offset = 0;
 
   const sheetName = PropertiesService.getScriptProperties().getProperty("SEARCH_SHEET") || "videos";
-  const sh = SpreadsheetApp.getActive().getSheetByName(sheetName);
+  const sh = getSpreadsheet_().getSheetByName(sheetName);
   if (!sh) throw new Error(`シートが見つからない: ${sheetName}`);
 
   const lastRow = sh.getLastRow();
